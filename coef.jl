@@ -1,4 +1,6 @@
 using HypergeometricFunctions
+using SpecialFunctions
+using QuadGK
 
 const qₑ = electron_charge = 4.803e-10
 const h = planck_constant = 6.626e-27
@@ -9,18 +11,13 @@ const bohr_radius = 5.292e-9
 const kB = boltzmann_constant = 1.3806e-16
 const Rₑ = rydberg_energy = 2.180e-11
 const χ1 = rydberg_energy/boltzmann_constant
-const menzel_cst = 4.141e-16
+const menzel_cst = h^3/(2π*mₑ*kB)^(3/2)
 
 
 
 include("johnson.jl")
 include("hydrogencoefficients.jl")
 
-linefrequency(u, l) = Rₑ/h*(1/l^2 - 1/u^2)
-
-# function boundfreeabsorbtion(f, n)
-#     return 8/3^(3/2)*n*planck_constant^3/(light_speed*π^2*electron_mass^2*electron_charge^2)/f^3/(1 + electron_mass/proton_mass)
-# end
 
 function spontaneouseinstein(i :: Int, j :: Int)
     u,l = if i < j
@@ -152,7 +149,7 @@ end
 """
     fbspontaneous(i :: Int, T)
 
-Compute collisional recombination rate (NOT spontaneous, three-particle) at temperature T
+Compute spontaneous recombination rate at temperature T
 
 $transitions_notation
 """
@@ -160,5 +157,114 @@ function fbspontaneous(i :: Int, T)
     spontaneousrecombinationrate(i, T)
 end
 
+"""
+    linefrequencyul(u :: Int, l :: Int)
+
+Compute transition u -> l frequency (u > l).
+"""
+function linefrequencyul(u :: Int, l :: Int)
+    Rₑ/h*(1/l^2 - 1/u^2)    
+end
+
+"""
+    linefrequencyul(u :: Int, l :: Int)
+
+Compute transition i -> j frequency (i ≂̸ j).
+"""
+function linefrequency(i :: Int, j :: Int)
+    Rₑ/h*abs(1/i^2 - 1/j^2)   
+end
+
+"""
+    blackbodybracket(i :: Int, j:: Int, T_s)
+
+Compute black-body radiation bracket at i -> j transition frequency. Defined from the Plank's law B_ν = 2hν³/c² * blackbody(...).\
+T_s is the temperature.
+"""
+function blackbodybracket(i :: Int, j :: Int, T_s)
+    1/(exp(abs(1/i^2 - 1/j^2)*χ1/T_s) - 1)
+end
+
+"""
+    blackbody(i :: Int, j:: Int, T_s)
+
+Compute black-body radiation intensity at i -> j transition frequency. T_s is the temperature.
+"""
+function blackbody(i :: Int, j :: Int, T_s)
+    ν = linefrequency(i, j)
+    blackbody(ν, T_s)
+end
+
+"""
+    blackbody(ν :: Real, T_s :: Real)
+
+Compute black-body radiation intensity at frequency ν. T_s is the temperature.
+"""
+function blackbody(ν :: Real, T_s :: Real)
+    2*h*ν^3/c^2/(exp(h*ν/(kB*T_s)) - 1)
+end
+
+"""
+    bflimitabsorbtioncoefficient(n :: Int)
+
+Absorbtion coefficient for n -> c transition (ionization) at threshold frequency.
+"""
+function bflimitabsorbtioncoefficient(n)
+    boundfreeabsorbtioncoefficient(n, 1.0 + eps(1.0))
+end
+
+"""
+    bfradiative(i :: Int, T_s)
+
+Compute radiative ionization rate. Radiation field is assumed to be black-body with temperature T_s.
+
+$transitions_notation
+"""
+function bfradiative(i :: Int, T_s)
+    ν_ci = limitfrequency(i)
+    int_fun(z) = 1/z/(exp(χ1/i^2/T_s/z) - 1)
+    int_res = quadgk(int_fun, 0, 1)[1]
+    return 8π*bflimitabsorbtioncoefficient(i)*ν_ci^3/c^2*int_res
+end
 
 
+"""
+    fbradiative(i :: Int, T_s, T_l)
+
+Compute recombinations induced by radiation field with temperature T_s (T_source) in hydrogen gas with temperarure T_l (T_local)
+
+$transitions_notation
+"""
+function fbradiative(i :: Int, T_s, T_l)
+    ν_ci = limitfrequency(i)
+    int_fun(z) = 1/z/(exp(χ1/i^2/T_s/z) - 1)*exp(-χ1/i^2/T_l/z)
+    int_res = quadgk(int_fun, 0, 1)[1]
+    return 8π*bflimitabsorbtioncoefficient(i)*ν_ci^3/c^2*int_res*i^2*h^3/(2π*mₑ*kB*T_l)^(3/2)*exp(χ1/i^2/T_l)
+end
+
+
+"""
+    ltene(n_H, T; levels = 5)
+
+Compute electron concentration in hydrogen gas with temperature `T` and hydroen concentration `n_H`. Assuming `levels` level atom.
+"""
+function ltene(n_H, T; levels = 5)
+    sum_neutral = 0.0
+    # println(lte_deviations)
+    for i ∈ 1:levels
+        sum_neutral = sum_neutral + i^2*menzel_cst/T^1.5*exp(χ1/i^2/T)
+        # println("$i ", lte_deviations[i])
+    end
+    return (-1 + √(1+4sum_neutral*n_H))/2sum_neutral
+end
+
+"""
+    lteni(i :: Int, n_H, T; levels = 5)
+
+Compute i-th level population in hydrogen gas with temperature `T` and hydroen concentration `n_H`. 
+Assuming `levels` level atom for electron concentration calculation.
+"""
+function lteni(i :: Int, n_H, T; levels = 5)
+    n_e = ltene(n_H, T; levels = levels)
+    return i^2*menzel_cst/T^1.5*exp(χ1/i^2/T)*n_e^2
+end
