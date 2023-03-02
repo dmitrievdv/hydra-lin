@@ -6,7 +6,10 @@ end
 function gII(n, ν)
     E = planck_constant*ν
     Eₙ = rydberg_energy/n^2
-    k = √(rydberg_energy/(E - Eₙ))
+    k = √(rydberg_energy/abs(E - Eₙ))
+    if k > 1e10
+        k = 1e10
+    end
     Δ = Δik(n, 1im*k)
     return √3*π*k*n*exp(-4k*atan(n/k))/√(k^2+n^2)/(1-exp(-2π*k))*abs(Δ)
 end

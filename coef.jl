@@ -210,7 +210,7 @@ end
 Absorbtion coefficient for n -> c transition (ionization) at threshold frequency.
 """
 function bflimitabsorbtioncoefficient(n)
-    boundfreeabsorbtioncoefficient(n, 1.0 + eps(1.0))
+    boundfreeabsorbtioncoefficient(n, 1.0)
 end
 
 """
@@ -243,28 +243,3 @@ function fbradiative(i :: Int, T_s, T_l)
 end
 
 
-"""
-    ltene(n_H, T; levels = 5)
-
-Compute electron concentration in hydrogen gas with temperature `T` and hydroen concentration `n_H`. Assuming `levels` level atom.
-"""
-function ltene(n_H, T; levels = 5)
-    sum_neutral = 0.0
-    # println(lte_deviations)
-    for i ∈ 1:levels
-        sum_neutral = sum_neutral + i^2*menzel_cst/T^1.5*exp(χ1/i^2/T)
-        # println("$i ", lte_deviations[i])
-    end
-    return (-1 + √(1+4sum_neutral*n_H))/2sum_neutral
-end
-
-"""
-    lteni(i :: Int, n_H, T; levels = 5)
-
-Compute i-th level population in hydrogen gas with temperature `T` and hydroen concentration `n_H`. 
-Assuming `levels` level atom for electron concentration calculation.
-"""
-function lteni(i :: Int, n_H, T; levels = 5)
-    n_e = ltene(n_H, T; levels = levels)
-    return i^2*menzel_cst/T^1.5*exp(χ1/i^2/T)*n_e^2
-end
