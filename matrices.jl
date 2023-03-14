@@ -7,10 +7,8 @@ Compute electron concentration in hydrogen gas with temperature `T` and hydroen 
 """
 function ltene(n_H, T; levels = 5)
     sum_neutral = 0.0
-    # println(lte_deviations)
     for i ∈ 1:levels
         sum_neutral = sum_neutral + i^2*menzel_cst/T^1.5*exp(χ1/i^2/T)
-        # println("$i ", lte_deviations[i])
     end
     return (-1 + √(1+4sum_neutral*n_H))/2sum_neutral
 end
@@ -78,7 +76,6 @@ function calculateescapepropabilities(v, z, n)
     β = zeros(n_levels, n_levels)
     for i = 1: n_levels
         τ = bflimitabsorbtioncoefficient(i)*n[i]*z
-        println(n[i])
         β[i,i] = exitpropability(τ)
         for j = 1:i-1
             A_ij = bbulspontaneous(i, j)
@@ -89,6 +86,30 @@ function calculateescapepropabilities(v, z, n)
         end
     end
     return β
+end
+
+"""
+    calculatelinearizedescapepropability(v, z, n)
+
+Calculate `α = ∂β/∂τ*τ` (first taylor expansion term for `β`) where β is escape propability (see `calculateescapepropabilities`).
+"""
+function calculatelinearizedescapepropability(v, z, n)
+    n_levels = length(n)
+    α = zeros(n_levels, n_levels)
+    for i = 1: n_levels
+        τ = bflimitabsorbtioncoefficient(i)*n[i]*z
+        β = exitpropability(τ)
+        α[i,i] = 1 - β - β*τ
+        for j = 1:i-1
+            A_ij = bbulspontaneous(i, j)
+            ν = linefrequencyul(i, j)
+            τ = c^3/8π*A_ij/ν^3*i^2/j^2*abs(z/v)*n[j]*abs(1- n[i]/n[j]*j^2/i^2)
+            β = exitpropability(τ)
+            α[i,j] = 1 - β - β*τ
+            α[j,i] = α[i,j]
+        end
+    end
+    return α
 end
 
 """
@@ -172,6 +193,99 @@ function menzelmatrix(β, n_e, T_l, T_s, W)
     return M, R
 end
 
+function linearisedpopulationsmatrix(n, α, β, n_e, T_l, T_s, W)
+    n_levels = size(β)[1]
+    M = zeros(n_levels, n_levels)
+    for i = 1:n_levels
+        A_ci = fbspontaneous(i, T_l)
+        B_ci = fbradiative(i, T_s, T_l)
+        B_ic = bfradiative(i, T_s)
+        q_ic = bfcollision(i, T_l)
+        β_ic = β[i,i]
+        α_ic = α[i,i]
+        X_i = χ1/i^2/T_l
+        M[i,i] += -β_ic*W*B_ic - n_e*q_ic + α_ic*(n_e^2/n[i]*(A_ci + 2β_ic*W*B_ci) - W*B_ic)
+        for j = 1:i-1
+            A_ij = bbulspontaneous(i, j)
+            J_ij = blackbodybracket(i, j, T_s)
+            S_ij = 1/abs(n[j]/n[i]*i^2/j^2 - 1)
+            β_ji = β[j,i]
+            α_ji = α[j,i]
+            q_ij = bbulcollision(i, j, T_l)
+            X_j = χ1/j^2/T_l
+            M[i,i] += A_ij*(α_ji*(S_ij - W*J_ij) - W*β_ji*J_ij) - A_ij*β_ji + n_e*q_ij
+            M[i,j] = A_ij*i^2/j^2*W*J_ij*(α_ji + β_ji) - A_ij*n[i]*i^2*α_ji/(n[j]*i^2-n[i]*j^2) + n_e*i^2/j^2*exp(X_i - X_j)*q_ij
+            # println("$i $j $(A_ij*(α_ji*(S_ij - W*J_ij) - β_ji)) $(-A_ij*β_ji) $(n_e*q_ij)")
+        end
+        for k = i+1:n_levels
+            A_ik = bbluspontaneous(i, k)
+            J_ik = blackbodybracket(k, i, T_s)
+            q_ik = bblucollision(i, k, T_l)
+            S_ik = 1/abs(n[i]/n[k]*k^2/i^2 - 1)
+            β_ki = β[i,k]
+            α_ki = α[i,k]
+            X_k = χ1/k^2/T_l
+            M[i,i] += A_ik*(α_ki*(S_ik - W*J_ik) - W*β_ki*J_ik) + n_e*q_ik
+            M[i,k] = A_ik*i^2/k^2*(1 + W*J_ik)*(α_ki + β_ki) - A_ik*n[i]*i^2*α_ki/(n[i]*k^2-n[k]*i^2) + n_e*i^2/k^2*exp(X_i - X_k)*q_ik
+            # println("$i $k $(A_ik*(α_ki*(S_ik - W*J_ik) - β_ki)) $(n_e*q_ik)")
+        end
+        # println("$i $(M[i,i]) $(-β_ic*W*B_ic) $(-n_e*q_ic) $(α_ic*(n_e^2/n[i]*(A_ci + 2β_ic*W*B_ci) - W*B_ic))")
+    end
+    return M
+end
+
+function linearizednhsources(n, n_e, β, W, T_l, T_s)
+    n_levels = length(n)
+    δσ = zeros(n_levels)
+    for i = 1:n_levels
+        δσ[i] += 2*n_e*β[i,i]*(fbspontaneous(i, T_l) + W*fbradiative(i, T_s, T_l))
+        q_ic = bfcollision(i, T_l)
+        δσ[i] += q_ic*(3*n_e^2*i^2*h^3/(2π*mₑ*kB*T_l)^(3/2)*exp(χ1/T_l/i^2) - n[i])
+        for j = 1:i-1
+            δσ[i] += bbulcollision(i, j, T_l)*(n[j]*i^2/j^2*exp(χ1/T_l*(1/i^2-1/j^2)) - n[i])
+        end
+        for k = i+1:n_levels
+            δσ[i] += bblucollision(i, k, T_l)*(n[k]*i^2/k^2*exp(χ1/T_l*(1/i^2-1/k^2)) - n[i])
+        end
+    end
+    return δσ
+end
+
+function linearizedTesources(n, n_e, β, W, T_l, T_s; ϵ = 1e-8)
+    n_levels = length(n)
+    δσ = zeros(n_levels)
+    dT_l = ϵ*T_l
+    T_l2 = T_l*(1+ϵ) 
+    for i = 1:n_levels
+        q_ic = bfcollision(i, T_l)
+        A_ci = fbspontaneous(i, T_l)
+        B_ci = fbradiative(i, T_s, T_l)
+        β_ic = β[i,i]
+        ∂q_ic = (bfcollision(i, T_l2) - q_ic)/dT_l
+        ∂A_ic = (fbspontaneous(i, T_l2) - A_ci)/dT_l
+        ∂B_ic = (fbradiative(i, T_s, T_l2) - B_ci)/dT_l
+        X_i = χ1/T_l/i^2
+        C_i = i^2*h^3/(2π*mₑ*kB*T_l)^(3/2)*exp(X_i)
+        δσ[i] += n_e^3*C_i*∂q_ic
+        δσ[i] += -n_e^3*C_i*(3/2 + X_i)/T_l*q_ic
+        δσ[i] += β_ic*n_e^2*(∂A_ic + β_ic*W*∂B_ic)
+        for j = 1:i-1
+            X_j = χ1/T_l/j^2
+            q_ij = bbulcollision(i, j, T_l)
+            ∂q_ij = (bbulcollision(i, j, T_l2) - q_ij)/dT_l
+            δσ[i] += n_e*n[j]*i^2/j^2*exp(X_i - X_j)*(∂q_ij - (X_i - X_j)*q_ij/T_l)
+            δσ[i] += -n_e*n[i]*(∂q_ij + ∂q_ic)
+        end
+        for k = i+1:n_levels
+            X_k = χ1/T_l/k^2
+            q_ik = bblucollision(i, k, T_l)
+            ∂q_ik = (bblucollision(i, k, T_l2) - q_ik)/dT_l
+            δσ[i] += n_e*n[k]*i^2/k^2*exp(X_i - X_k)*(∂q_ik - (X_i - X_k)*q_ik/T_l)
+            δσ[i] += -n_e*n[i]*(∂q_ik + ∂q_ic)
+        end
+    end
+    return δσ
+end
 
 """
     solvestationary(n_H, T_l, W, T_s, z, v; n_levels = 15, ε = 1e-3, max_it = 100)
@@ -200,11 +314,7 @@ function solvestationary(n_H, T_l, W, T_s, z, v; n_levels = 15, ε = 1e-3, max_i
         for i = 1:n_levels
             n[i] = lteni(i, n_e, T_l)*b[i]
         end
-        # println("$n_e $abs_Δb")
-        # println(b[1:5])
-        for i = 1:5
-            println(β[i, 1:5])
-        end
     end
     return n
 end
+

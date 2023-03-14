@@ -241,5 +241,3 @@ function fbradiative(i :: Int, T_s, T_l)
     int_res = quadgk(int_fun, 0, 1)[1]
     return 8π*bflimitabsorbtioncoefficient(i)*ν_ci^3/c^2*int_res*i^2*h^3/(2π*mₑ*kB*T_l)^(3/2)*exp(χ1/i^2/T_l)
 end
-
-
