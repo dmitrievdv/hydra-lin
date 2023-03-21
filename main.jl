@@ -7,10 +7,10 @@ lg_z_arr = [3:0.1:14;]
 n_z = length(lg_z_arr)
 n_levels = 15
 v = 3e7
-W = 1e-1000
+W = 1e-2
 T_l = 8e3
-T_s = 6e3
-n_H = 1e11
+T_s = 5e3
+n_H = 1e10
 
 n_matrix = zeros(n_z, n_levels)
 b_matrix = zeros(n_z, n_levels)
@@ -35,7 +35,7 @@ z = 1e11
 k = 1e-10
 
 
-T_ls = [6e3:3e1:20e3;]
+T_ls = [4e3:3e1:20e3;]
 n_Tl = length(T_ls)
 ns = zeros(n_levels, n_Tl)
 ΔAs = zeros(n_levels, n_Tl)
@@ -62,9 +62,9 @@ for j = 1:n_Tl
     n_e = n_H - sum(n)
 
     # j = 3
-    ϵ = 1e-1
-    δnH = 100
-    δTl = 100
+    ϵ = 1e-4
+    δnH = 1
+    δTl = 1
 
     δσ_ij = linearisedpopulationsmatrix(n, α, β, n_e, T_l, T_s, W)
     δσ_inH = linearizednhsources(n, n_e, β, W, T_l, T_s)
@@ -73,12 +73,13 @@ for j = 1:n_Tl
     L = zeros(ComplexF64, (n_levels, n_levels))
     V = zeros(ComplexF64, n_levels)
     V .= (-δσ_inH*δnH - δσ_iTl*δTl) ./ n
+    ones = fill(1.0 + 0.0im, n_levels)
     # V .= reverse(V)
     # println(V)
 
     for i = 1:n_levels
-        ii = i#n_levels - i + 1
-        L[ii, :] = (δσ_ij[i,:] .- δσ_inH[i]) .* n / n[i]
+        ii = i# n_levels - i + 1
+        L[ii, :] = (δσ_ij[i,:] .- δσ_inH[i]) .* n / n[i] #/ V[i]
     end
 
     problem = LinearProblem(L, V)
@@ -90,12 +91,12 @@ for j = 1:n_Tl
     A_0 = abs.(δf)
     ϕ_0 = @. imag(log(δf / A_0 * (1 + 0.0im)))
 
-    n_nostat_levels = n_levels
+    n_nostat_levels = 1#n_levels
     for i = 1:n_nostat_levels
-        L[i,i] += k*v*1im
+        L[i,i] += k*v*1im# / V[i]
     end
 
-    V_nonstat = fill(-k*v*1im) .* δf
+    V_nonstat = fill(-k*v*1im) .* δf# ./ V
     # V_nonstat .= reverse(V_nonstat)
     # Δf = L \ V_nonstat
 
@@ -103,10 +104,10 @@ for j = 1:n_Tl
     solution = solve(problem)
     Δf = solution.u
 
-    # problem = LinearProblem(L, V)
-    # solution = solve(problem)
+    problem = LinearProblem(L, V)
+    solution = solve(problem)
     # δf = solution.u
-    # fs_res[:, j] = L*δf - V
+    fs_res[:, j] = L*δf - V
     # δf = L \ V
     δf = δf + Δf
     A = abs.((δf))
@@ -137,15 +138,15 @@ for j = 1:n_Tl
     fs[:, j] = δf
 end
 
-# begin
-# lev = 3
-# plt = plot(T_ls, log10.(Ls[lev,lev, :]), lc = :black) 
-# for i = 1:10
-#     plot!(plt, T_ls, log10.(Ls[lev,lev+i, :]), lc = i) 
-#     plot!(plt, T_ls, log10.(Ls[lev+i,lev, :]), lc = i, ls = :dash) 
-# end
-# plt
-# end
+begin
+lev = 3
+plt = plot(T_ls, log10.(Ls[lev,lev, :]), lc = :black) 
+for i = 1:10
+    plot!(plt, T_ls, log10.(Ls[lev,lev+i, :]), lc = i) 
+    plot!(plt, T_ls, log10.(Ls[lev+i,lev, :]), lc = i, ls = :dash) 
+end
+plt
+end
 
 begin
     lev = 3
@@ -158,6 +159,39 @@ begin
     end
     plt
 end
+
+begin
+    lev = 3
+    plt = plot(T_ls, log10.(A0s[1,:]), lc = 1) 
+    plot!(plt, T_ls, log10.(A0s[1,:] ./ ΔAs[1,:]), lc = 1, ls = :dash) 
+    for i = 2:lev
+        plot!(plt, T_ls, log10.(A0s[i,:]), lc = i) 
+        plot!(plt, T_ls, log10.(A0s[i,:] ./ ΔAs[i,:]), lc = i, ls = :dash) 
+        # plot!(plt, T_ls, log10.(Ls[lev+i,lev, :]), lc = i, ls = :dash) 
+    end
+    plt
+end
+
+begin
+    lev = 5
+    plt = plot(T_ls, log10.(ΔAs[1,:]), lc = 1) 
+    for i = 2:lev
+        plot!(plt, T_ls, log10.(ΔAs[i,:]), lc = i) 
+        # plot!(plt, T_ls, log10.(Ls[lev+i,lev, :]), lc = i, ls = :dash) 
+    end
+    plt
+end
+
+begin
+    lev = 5
+    plt = plot(T_ls, (Δϕs[1,:]), lc = 1) 
+    for i = 2:lev
+        plot!(plt, T_ls, (Δϕs[i,:]), lc = i) 
+        # plot!(plt, T_ls, log10.(Ls[lev+i,lev, :]), lc = i, ls = :dash) 
+    end
+    plt
+end
+
 # n_e = n_H - sum(n)
 # M, R = populationsmatrix(β, n_e, T_l, T_s, W)
 # σ1 = M*n + R

@@ -213,7 +213,7 @@ function linearisedpopulationsmatrix(n, α, β, n_e, T_l, T_s, W)
             α_ji = α[j,i]
             q_ij = bbulcollision(i, j, T_l)
             X_j = χ1/j^2/T_l
-            M[i,i] += A_ij*(α_ji*(S_ij - W*J_ij) - W*β_ji*J_ij) - A_ij*β_ji + n_e*q_ij
+            M[i,i] += A_ij*(α_ji*(S_ij - W*J_ij) - W*β_ji*J_ij) - A_ij*β_ji - n_e*q_ij
             M[i,j] = A_ij*i^2/j^2*W*J_ij*(α_ji + β_ji) - A_ij*n[i]*i^2*α_ji/(n[j]*i^2-n[i]*j^2) + n_e*i^2/j^2*exp(X_i - X_j)*q_ij
             # println("$i $j $(A_ij*(α_ji*(S_ij - W*J_ij) - β_ji)) $(-A_ij*β_ji) $(n_e*q_ij)")
         end
@@ -225,7 +225,7 @@ function linearisedpopulationsmatrix(n, α, β, n_e, T_l, T_s, W)
             β_ki = β[i,k]
             α_ki = α[i,k]
             X_k = χ1/k^2/T_l
-            M[i,i] += A_ik*(α_ki*(S_ik - W*J_ik) - W*β_ki*J_ik) + n_e*q_ik
+            M[i,i] += A_ik*(α_ki*(S_ik - W*J_ik) - W*β_ki*J_ik) - n_e*q_ik
             M[i,k] = A_ik*i^2/k^2*(1 + W*J_ik)*(α_ki + β_ki) - A_ik*n[i]*i^2*α_ki/(n[i]*k^2-n[k]*i^2) + n_e*i^2/k^2*exp(X_i - X_k)*q_ik
             # println("$i $k $(A_ik*(α_ki*(S_ik - W*J_ik) - β_ki)) $(n_e*q_ik)")
         end
@@ -238,14 +238,23 @@ function linearizednhsources(n, n_e, β, W, T_l, T_s)
     n_levels = length(n)
     δσ = zeros(n_levels)
     for i = 1:n_levels
-        δσ[i] += 2*n_e*β[i,i]*(fbspontaneous(i, T_l) + W*fbradiative(i, T_s, T_l))
+        A_ci = fbspontaneous(i, T_l)
+        B_ci = fbradiative(i, T_s, T_l)
+        β_ic = β[i,i]
+        X_i = χ1/T_l/i^2
+        C_i = i^2*h^3/(2π*mₑ*kB*T_l)^(3/2)*exp(X_i)
         q_ic = bfcollision(i, T_l)
-        δσ[i] += q_ic*(3*n_e^2*i^2*h^3/(2π*mₑ*kB*T_l)^(3/2)*exp(χ1/T_l/i^2) - n[i])
+        δσ[i] += 2*n_e*β_ic*(A_ci + β_ic*W*B_ci)
+        δσ[i] += q_ic*(3*n_e^2*C_i - n[i])
         for j = 1:i-1
-            δσ[i] += bbulcollision(i, j, T_l)*(n[j]*i^2/j^2*exp(χ1/T_l*(1/i^2-1/j^2)) - n[i])
+            X_j = χ1/T_l/j^2
+            q_ij = bbulcollision(i, j, T_l)
+            δσ[i] += q_ij*(n[j]*i^2/j^2*exp(X_i - X_j) - n[i])
         end
         for k = i+1:n_levels
-            δσ[i] += bblucollision(i, k, T_l)*(n[k]*i^2/k^2*exp(χ1/T_l*(1/i^2-1/k^2)) - n[i])
+            X_k = χ1/T_l/k^2
+            q_ik = bblucollision(i, k, T_l)
+            δσ[i] += q_ik*(n[k]*i^2/k^2*exp(X_i - X_k) - n[i])
         end
     end
     return δσ
@@ -269,19 +278,20 @@ function linearizedTesources(n, n_e, β, W, T_l, T_s; ϵ = 1e-8)
         δσ[i] += n_e^3*C_i*∂q_ic
         δσ[i] += -n_e^3*C_i*(3/2 + X_i)/T_l*q_ic
         δσ[i] += β_ic*n_e^2*(∂A_ic + β_ic*W*∂B_ic)
+        δσ[i] += -n_e*n[i]*∂q_ic
         for j = 1:i-1
             X_j = χ1/T_l/j^2
             q_ij = bbulcollision(i, j, T_l)
             ∂q_ij = (bbulcollision(i, j, T_l2) - q_ij)/dT_l
             δσ[i] += n_e*n[j]*i^2/j^2*exp(X_i - X_j)*(∂q_ij - (X_i - X_j)*q_ij/T_l)
-            δσ[i] += -n_e*n[i]*(∂q_ij + ∂q_ic)
+            δσ[i] += -n_e*n[i]*∂q_ij
         end
         for k = i+1:n_levels
             X_k = χ1/T_l/k^2
             q_ik = bblucollision(i, k, T_l)
             ∂q_ik = (bblucollision(i, k, T_l2) - q_ik)/dT_l
             δσ[i] += n_e*n[k]*i^2/k^2*exp(X_i - X_k)*(∂q_ik - (X_i - X_k)*q_ik/T_l)
-            δσ[i] += -n_e*n[i]*(∂q_ik + ∂q_ic)
+            δσ[i] += -n_e*n[i]*∂q_ik
         end
     end
     return δσ
