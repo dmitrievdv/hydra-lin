@@ -10,7 +10,7 @@ v = 3e7
 W = 1e-2
 T_l = 8e3
 T_s = 5e3
-n_H = 1e10
+n_H = 1e12
 
 n_matrix = zeros(n_z, n_levels)
 b_matrix = zeros(n_z, n_levels)
@@ -35,7 +35,7 @@ z = 1e11
 k = 1e-10
 
 
-T_ls = [4e3:3e1:20e3;]
+T_ls = [1e3:3e1:20e3;]
 n_Tl = length(T_ls)
 ns = zeros(n_levels, n_Tl)
 ΔAs = zeros(n_levels, n_Tl)
@@ -49,6 +49,11 @@ Vs = zeros(n_levels, n_Tl)
 Δfs = zeros(Complex, n_levels, n_Tl)
 f0s = zeros(Complex, n_levels, n_Tl)
 fs = zeros(Complex, n_levels, n_Tl)
+
+f1s = zeros(Complex, n_levels, n_Tl)
+Δf1s = zeros(Complex, n_levels, n_Tl)
+ΔA1s = zeros(n_levels, n_Tl)
+Δϕ1s = zeros(n_levels, n_Tl)
 
 f0s_res = zeros(Complex, n_levels, n_Tl)
 fs_res = zeros(Complex, n_levels, n_Tl)
@@ -91,12 +96,41 @@ for j = 1:n_Tl
     A_0 = abs.(δf)
     ϕ_0 = @. imag(log(δf / A_0 * (1 + 0.0im)))
 
-    n_nostat_levels = 1#n_levels
-    for i = 1:n_nostat_levels
-        L[i,i] += k*v*1im# / V[i]
+    V_nonstat = zeros(Complex{Float64}, n_levels)
+
+    L[1,1] += k*v*1im
+    V_nonstat[1] = -k*v*1im*δf[1]
+
+    problem = LinearProblem(L, V_nonstat)
+    solution = solve(problem)
+    Δf1 = solution.u
+    δf1 = δf + Δf1
+    A1 = abs.((δf1))
+    ϕ1 = @. imag(log(δf1 / abs(δf1)))
+
+    Δϕ1 = ϕ1 - ϕ_0
+    for i = 1:n_levels
+       if Δϕ1[i] > π
+            Δϕ1[i] -= 2π
+        elseif Δϕ1[i] < -π
+            Δϕ1[i] += 2π
+        end
     end
 
-    V_nonstat = fill(-k*v*1im) .* δf# ./ V
+    ΔA1 = A_0 ./ A1
+
+    ΔA1s[:, j] = ΔA1
+    Δϕ1s[:, j] = Δϕ1
+    Δf1s[:, j] = Δf1
+    f1s[:, j] = δf1
+
+    n_nostat_levels = n_levels
+    for i = 2:n_nostat_levels
+        L[i,i] += k*v*1im# / V[i]
+        V_nonstat[i] = -k*v*1im*δf[i]
+    end
+
+    # V_nonstat = fill(-k*v*1im) .* δf# ./ V
     # V_nonstat .= reverse(V_nonstat)
     # Δf = L \ V_nonstat
 
@@ -136,6 +170,7 @@ for j = 1:n_Tl
     Vs[:, j] .= abs.(V)
     Δfs[:, j] = Δf
     fs[:, j] = δf
+
 end
 
 begin
@@ -150,18 +185,18 @@ end
 
 begin
     lev = 3
-    plt = plot(T_ls, log10.(abs.(real.(Δfs[1,:])) ./ abs.(f0s[1,:])), lc = 1) 
-    plot!(plt, T_ls, log10.(abs.(imag.(Δfs[1,:])) ./ abs.(f0s[1,:])), lc = 1, ls = :dash) 
+    plt = plot(T_ls, log10.(abs.(real.(fs[1,:])) ./ abs.(f0s[1,:])), lc = 1, label = "1, real") 
+    plot!(plt, T_ls, log10.(abs.(imag.(fs[1,:])) ./ abs.(f0s[1,:])), lc = 1, ls = :dash, label = "1, imag") 
     for i = 2:lev
-        plot!(plt, T_ls, log10.(abs.(real.(Δfs[i,:])) ./ abs.(f0s[1,:])), lc = i) 
-        plot!(plt, T_ls, log10.(abs.(imag.(Δfs[i,:])) ./ abs.(f0s[i,:])), lc = i, ls = :dash) 
+        plot!(plt, T_ls, log10.(abs.(real.(fs[i,:])) ./ abs.(f0s[i,:])), lc = i, label = "$i, real") 
+        plot!(plt, T_ls, log10.(abs.(imag.(fs[i,:])) ./ abs.(f0s[i,:])), lc = i, ls = :dash, label = "$i, imag") 
         # plot!(plt, T_ls, log10.(Ls[lev+i,lev, :]), lc = i, ls = :dash) 
     end
     plt
 end
 
 begin
-    lev = 3
+    lev = 5
     plt = plot(T_ls, log10.(A0s[1,:]), lc = 1) 
     plot!(plt, T_ls, log10.(A0s[1,:] ./ ΔAs[1,:]), lc = 1, ls = :dash) 
     for i = 2:lev
@@ -174,9 +209,11 @@ end
 
 begin
     lev = 5
-    plt = plot(T_ls, log10.(ΔAs[1,:]), lc = 1) 
+    plt = plot(T_ls, log10.(ΔAs[1,:]) , lc = 1) 
+    plot!(plt, T_ls, log10.(ΔA1s[1,:]), lc = 1, ls = :dash) 
     for i = 2:lev
         plot!(plt, T_ls, log10.(ΔAs[i,:]), lc = i) 
+        plot!(plt, T_ls, log10.(ΔA1s[i,:]), lc = i, ls = :dash) 
         # plot!(plt, T_ls, log10.(Ls[lev+i,lev, :]), lc = i, ls = :dash) 
     end
     plt
@@ -190,6 +227,14 @@ begin
         # plot!(plt, T_ls, log10.(Ls[lev+i,lev, :]), lc = i, ls = :dash) 
     end
     plt
+end
+
+begin
+    lev = 4
+    
+    plt = plot(real.(Δfs[lev,:] ./ real.(f0s[lev,:])), imag.(Δfs[lev,:] ./ real.(f0s[lev,:])), line_z = T_ls)
+    xlims!(plt, -2, 2)
+    ylims!(plt, -2, 2)
 end
 
 # n_e = n_H - sum(n)
