@@ -35,7 +35,7 @@ z = 1e11
 k = 1e-10
 
 
-T_ls = [1e3:3e1:20e3;]
+T_ls = [1e3:1e1:20e3;]
 n_Tl = length(T_ls)
 ns = zeros(n_levels, n_Tl)
 ΔAs = zeros(n_levels, n_Tl)
@@ -83,8 +83,7 @@ for j = 1:n_Tl
     # println(V)
 
     for i = 1:n_levels
-        ii = i# n_levels - i + 1
-        L[ii, :] = (δσ_ij[i,:] .- δσ_inH[i]) .* n / n[i] #/ V[i]
+        L[i, :] = (δσ_ij[i,:] .- δσ_inH[i]) .* n / n[i] #/ V[i]
     end
 
     problem = LinearProblem(L, V)
@@ -230,7 +229,7 @@ begin
 end
 
 begin
-    lev = 4
+    lev = 1
     
     plt = plot(real.(Δfs[lev,:] ./ real.(f0s[lev,:])), imag.(Δfs[lev,:] ./ real.(f0s[lev,:])), line_z = T_ls)
     xlims!(plt, -2, 2)
@@ -256,4 +255,4 @@ end
 # σ2 = M*n2 + R
 
 # δσ = (σ2 - σ1)/(ϵ*n[j])
-# println((δσ - (δσ_ij[:,j] - δσ_inH))./σ1):
+# println((δσ - (δσ_ij[:,j] - δσ_inH))./σ1):log10.(abs.(δfs_stat[1,:,i_W])) - log10.(abs.(δfs_nonstat[1,:,i_W]))
