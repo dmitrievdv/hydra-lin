@@ -88,6 +88,48 @@ function calculateescapepropabilities(v, z, n)
     return β
 end
 
+function calculate_plane_parallel_escape_propability(v, z, n)
+    n_levels = length(n)
+    β = zeros(n_levels, n_levels)
+    for i = 1: n_levels
+        τ = bflimitabsorbtioncoefficient(i)*n[i]*z
+        β[i,i] = exitpropability(τ)
+        for j = 1:i-1
+            A_ij = bbulspontaneous(i, j)
+            ν = linefrequencyul(i, j)
+            τ = c^3/8π*A_ij/ν^3*i^2/j^2*abs(z/v)*n[j]*abs(1- n[i]/n[j]*j^2/i^2)
+            β[i,j] = plane_parallel_escape_propability(τ)
+            β[j,i] = β[i,j]
+        end
+    end
+    return β
+end
+
+function calculate_plane_parallel_linearized_escape_propability(v, z, n)
+    n_levels = length(n)
+    α = zeros(n_levels, n_levels)
+    # E₂ = expint(2, τ)
+    for i = 1: n_levels
+        τ = bflimitabsorbtioncoefficient(i)*n[i]*z
+        E₂ = expint(2, τ)
+        α[i,i] = E₂ - plane_parallel_escape_propability(τ)
+        for j = 1:i-1
+            A_ij = bbulspontaneous(i, j)
+            ν = linefrequencyul(i, j)
+            τ = c^3/8π*A_ij/ν^3*i^2/j^2*abs(z/v)*n[j]*abs(1- n[i]/n[j]*j^2/i^2)
+            # β = plane_parallel_escape_propability(τ)
+            E₂ = expint(2, τ)
+            α[i, j] = E₂ - plane_parallel_escape_propability(τ)
+        end
+    end
+    return α
+end
+
+function plane_parallel_escape_propability(τ)
+    return (1/2 - expint(3, τ))/τ
+end
+
+
 """
     calculatelinearizedescapepropability(v, z, n)
 
@@ -303,7 +345,7 @@ end
 Solve stationary equation `σ_i = 0` in  expanding (v, z) 1d medium (n_H, T_l) with one radiation source (W, T_s)/
 
 """
-function solvestationary(n_H, T_l, W, T_s, z, v; n_levels = 15, ε = 1e-3, max_it = 100)
+function solvestationary(n_H, T_l, W, T_s, z, v; n_levels = 15, ε = 1e-3, max_it = 100, plane_parallel = false)
     n = zeros(n_levels)
     b = fill(1.0, n_levels)
     # n_new
@@ -315,7 +357,11 @@ function solvestationary(n_H, T_l, W, T_s, z, v; n_levels = 15, ε = 1e-3, max_i
     it = 0
     while (abs_Δb > ε) & (it < max_it)
         it += 1
-        β = calculateescapepropabilities(v, z, n)
+        β = if plane_parallel 
+            calculate_plane_parallel_escape_propability(v, z, n)
+        else
+            calculateescapepropabilities(v, z, n)
+        end
         M, R = menzelmatrix(β, n_e, T_l, T_s, W)
         b_new = M\(-R)
         abs_Δb = sqrt(sum(@. (b_new/b - 1)^2))

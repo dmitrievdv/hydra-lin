@@ -4,13 +4,13 @@ include("matrices.jl")
 
 # solvestationary(n_H, T_l, W, T_s, z, v; n_levels = n_levels, max_it = 100, ε = 1e-6)
 
-function findstatk(n_H, T_l, W, T_s, z, v, target; n_levels = 15, kwargs...)
-    n_stat = solvestationary(n_H, T_l, W, T_s, z, v, n_levels = n_levels, kwargs...)
+function findstatk(n_H, T_l, W, T_s, z, v, target; n_levels = 15, plane_parallel = false, kwargs...)
+    n_stat = solvestationary(n_H, T_l, W, T_s, z, v, n_levels = n_levels, plane_parallel = plane_parallel, kwargs...)
     lg_k_low = -20.0
     lg_k_high = 0.0
     function ionnonstat(k)
-        δf_stat = stationarycomplexamp(n_stat, n_H, T_l, W, T_s, z, v; varpars = ("T_l",))
-        δf_nonstat = nonstationarycomplexamp(n_stat, δf_stat, n_H, T_l, W, T_s, z, v, k)
+        δf_stat = stationarycomplexamp(n_stat, n_H, T_l, W, T_s, z, v; varpars = ("T_l",), plane_parallel = plane_parallel)
+        δf_nonstat = nonstationarycomplexamp(n_stat, δf_stat, n_H, T_l, W, T_s, z, v, k; plane_parallel = plane_parallel)
         return abs(δf_stat[1])/abs(δf_nonstat[1]) - target
     end
 
@@ -32,7 +32,7 @@ function findstatk(n_H, T_l, W, T_s, z, v, target; n_levels = 15, kwargs...)
     return 10^lg_k_high
 end
 
-function stationarycomplexamp(n_stat, n_H, T_l, W, T_s, z, v; varpars = ("T_l",))
+function stationarycomplexamp(n_stat, n_H, T_l, W, T_s, z, v; varpars = ("T_l",), plane_parallel = false)
     n_levels = length(n_stat)
     
     δnH = 0
@@ -44,8 +44,17 @@ function stationarycomplexamp(n_stat, n_H, T_l, W, T_s, z, v; varpars = ("T_l",)
     end
 
     n_e = n_H - sum(n_stat)
-    α = calculatelinearizedescapepropability(v, z, n_stat)
-    β = calculateescapepropabilities(v, z, n_stat)
+    α = if plane_parallel
+        calculate_plane_parallel_linearized_escape_propability(v, z, n_stat)
+    else
+        calculatelinearizedescapepropability(v, z, n_stat)
+    end
+    β = if plane_parallel
+        calculate_plane_parallel_escape_propability(v, z, n_stat)
+    else
+        calculateescapepropabilities(v, z, n_stat)
+    end
+    
     δσ_ij = linearisedpopulationsmatrix(n_stat, α, β, n_e, T_l, T_s, W)
     δσ_inH = linearizednhsources(n_stat, n_e, β, W, T_l, T_s)
     δσ_iTl = linearizedTesources(n_stat, n_e, β, W, T_l, T_s)
@@ -64,12 +73,20 @@ function stationarycomplexamp(n_stat, n_H, T_l, W, T_s, z, v; varpars = ("T_l",)
     return solution.u
 end
 
-function nonstationarycomplexamp(n_stat, statcomplexamps, n_H, T_l, W, T_s, z, v, k; nonstat_levels = 0)
+function nonstationarycomplexamp(n_stat, statcomplexamps, n_H, T_l, W, T_s, z, v, k; nonstat_levels = 0, plane_parallel = false)
     n_levels = length(n_stat)
 
     n_e = n_H - sum(n_stat)
-    α = calculatelinearizedescapepropability(v, z, n_stat)
-    β = calculateescapepropabilities(v, z, n_stat)
+    α = if plane_parallel
+        calculate_plane_parallel_linearized_escape_propability(v, z, n_stat)
+    else
+        calculatelinearizedescapepropability(v, z, n_stat)
+    end
+    β = if plane_parallel
+        calculate_plane_parallel_escape_propability(v, z, n_stat)
+    else
+        calculateescapepropabilities(v, z, n_stat)
+    end
     δσ_ij = linearisedpopulationsmatrix(n_stat, α, β, n_e, T_l, T_s, W)
     δσ_inH = linearizednhsources(n_stat, n_e, β, W, T_l, T_s)
 

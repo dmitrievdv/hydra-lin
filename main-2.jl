@@ -34,7 +34,7 @@ begin
     for i=1:n_Tl, j=1:n_nH
         n_H = 10^lg_nHs[j]
         T_l = T_ls[i]
-        ks[i,j] = findstatk(n_H, T_l, W, T_s, z, v, 2)
+        ks[i,j] = findstatk(n_H, T_l, W, T_s, z, v, 2, plane_parallel = true)
 
     end
     heatmap(lg_nHs, T_ls, log10.(ks), clims = (-12,-7))
@@ -64,11 +64,11 @@ b_stats = zeros((n_levels, n_Tl, n_W))
 
 for i = 1:n_Tl; for j = 1:n_W
     T_l = T_ls[i]; W = 10^lgWs[j]
-    n_stat = solvestationary(n_H, T_l, W, T_s, z, v, n_levels = n_levels, max_it = 100, ε = 1e-6)
+    n_stat = solvestationary(n_H, T_l, W, T_s, z, v, n_levels = n_levels, max_it = 100, ε = 1e-6,  plane_parallel = true)
     b_stat = [n_stat[lev] / lteni(lev, n_H - sum(n_stat), T_l) for lev in 1:n_levels]
     δf_stat = stationarycomplexamp(n_stat, n_H, T_l, W, T_s, z, v; varpars = ("T_l",))
-    δf_nonstat1 = nonstationarycomplexamp(n_stat, δf_stat, n_H, T_l, W, T_s, z, v, k; nonstat_levels = 1)
-    δf_nonstat = nonstationarycomplexamp(n_stat, δf_stat, n_H, T_l, W, T_s, z, v, k)
+    δf_nonstat1 = nonstationarycomplexamp(n_stat, δf_stat, n_H, T_l, W, T_s, z, v, k; nonstat_levels = 1,  plane_parallel = true)
+    δf_nonstat = nonstationarycomplexamp(n_stat, δf_stat, n_H, T_l, W, T_s, z, v, k, plane_parallel = true)
 
     n_stats[:, i, j] .=  n_stat
     b_stats[:, i, j] .=  b_stat
