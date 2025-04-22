@@ -1,3 +1,5 @@
+using LinearAlgebra
+
 include("coef.jl")
 
 """
@@ -47,6 +49,21 @@ function menzelne(b, n_H, T)
         sum_neutral = sum_neutral + i^2*menzel_cst/T^1.5*exp(χ1/i^2/T)*b[i]
     end
     return (-1 + √(1+4sum_neutral*n_H))/2sum_neutral
+end
+
+function calc_simple_ne(b1, n_H, T)
+    sum_neutral = 0.0
+    sum_neutral = sum_neutral + menzel_cst/T^1.5*exp(χ1/T)*b1
+    return (-1 + √(1+4sum_neutral*n_H))/2sum_neutral
+end
+
+function calc_upper_levels_ne(n_1, b_upper, n_H, T)
+    sum_neutral = 0.0
+    levels = length(b_upper) + 1
+    for i ∈ 2:levels
+        sum_neutral = sum_neutral + i^2*menzel_cst/T^1.5*exp(χ1/i^2/T)*b_upper[i-1]
+    end
+    return (-1 + √(1+4sum_neutral*(n_H-n_1)))/2sum_neutral
 end
 
 """
@@ -180,7 +197,7 @@ function populationsmatrix(β, n_e, T_l, T_s, W)
             β_ji = β[j,i]
             q_ij = bbulcollision(i, j, T_l)
             M[i,i] += -A_ij*β_ji*(1 + W*J_ij) - n_e*q_ij
-            M[i,j] = i^2/j^2*(A_ij*W*β_ji*J_ij + exp(χ1/T_l*(1/i^2 - 1/j^2))*q_ij*n_e)
+            M[i,j] += i^2/j^2*(A_ij*W*β_ji*J_ij + exp(χ1/T_l*(1/i^2 - 1/j^2))*q_ij*n_e)
         end
         for k = i+1:n_levels
             A_ki = bbulspontaneous(k, i)
@@ -221,7 +238,7 @@ function menzelmatrix(β, n_e, T_l, T_s, W)
             β_ji = β[j,i]
             q_ij = bbulcollision(i, j, T_l)
             M[i,i] += -A_ij*β_ji*(1 + W*J_ij) - n_e*q_ij
-            M[i,j] = exp(χ1/T_l*(1/j^2 - 1/i^2))*A_ij*W*β_ji*J_ij + q_ij*n_e
+            M[i,j] += exp(χ1/T_l*(1/j^2 - 1/i^2))*A_ij*W*β_ji*J_ij + q_ij*n_e
         end
         for k = i+1:n_levels
             A_ki = bbulspontaneous(k, i)
@@ -345,7 +362,7 @@ end
 Solve stationary equation `σ_i = 0` in  expanding (v, z) 1d medium (n_H, T_l) with one radiation source (W, T_s)/
 
 """
-function solvestationary(n_H, T_l, W, T_s, z, v; n_levels = 15, ε = 1e-3, max_it = 100, plane_parallel = false)
+function solvestationary(n_H, T_l, W, T_s, z, v; n_levels = 15, ε = 1e-3, max_it = 100, plane_parallel = false, simple_ne = false)
     n = zeros(n_levels)
     b = fill(1.0, n_levels)
     # n_new
@@ -366,7 +383,11 @@ function solvestationary(n_H, T_l, W, T_s, z, v; n_levels = 15, ε = 1e-3, max_i
         b_new = M\(-R)
         abs_Δb = sqrt(sum(@. (b_new/b - 1)^2))
         b .= b_new
-        n_e = menzelne(b, n_H, T_l)
+        n_e = if simple_ne
+            calc_simple_ne(b[1], n_H, T_l) 
+        else
+            menzelne(b, n_H, T_l)
+        end
         for i = 1:n_levels
             n[i] = lteni(i, n_e, T_l)*b[i]
         end
@@ -374,3 +395,76 @@ function solvestationary(n_H, T_l, W, T_s, z, v; n_levels = 15, ε = 1e-3, max_i
     return n
 end
 
+function solve_stationary_upper_levels(n_1, n_H, T_l, W, T_s, z, v; n_levels = 15, ε = 1e-3, max_it = 100, plane_parallel = false, simple_ne = false)
+    n_upper = zeros(n_levels-1)
+    b_upper = fill(1.0, n_levels-1)
+    n_e = if simple_ne
+        n_H - n_1
+    else
+        calc_upper_levels_ne(n_1, b_upper, n_H, T_l)
+    end
+    # n_new
+    # n_e = ltene(n_H, T_l)
+    for i = 2:n_levels
+        n_upper[i-1] = lteni(i, n_e, T_l)
+    end
+    b_1 = n_1 / lteni(1, n_e, T_l)
+    abs_Δb = 1e10 
+    it = 0
+
+    n = zeros(n_levels)
+    n[1] = n_1
+
+    while (abs_Δb > ε) & (it < max_it)
+        n[2:n_levels] .= n_upper
+        it += 1
+        b_1 = n_1 / lteni(1, n_e, T_l)
+        β = if plane_parallel 
+            calculate_plane_parallel_escape_propability(v, z, n)
+        else
+            calculateescapepropabilities(v, z, n)
+        end
+        M, R = menzelmatrix(β, n_e, T_l, T_s, W)
+        b_upper_new = M[2:end,2:end]\(-R[2:end] - M[2:end,1]*b_1)
+        abs_Δb = sqrt(sum(@. (b_upper_new/b_upper - 1)^2))
+        b_upper .= b_upper_new
+        n_e = if simple_ne
+            n_H - n_1
+        else
+            calc_upper_levels_ne(n_1, b_upper, n_H, T_l)
+        end
+        for i = 2:n_levels
+            n_upper[i-1] = lteni(i, n_e, T_l)*b_upper[i-1]
+        end
+    end
+    return [n_1; n_upper]
+end
+
+function calc_first_level_derivative(n_1, n_H, T_l, W, T_s, z, v; n_levels = 15, ε = 1e-3, max_it = 100, plane_parallel = false, simple_ne = false)
+    n = solve_stationary_upper_levels(n_1, n_H, T_l, W, T_s, z, v; n_levels = n_levels, ε = ε, max_it = max_it, 
+                                                                   plane_parallel = plane_parallel, simple_ne = simple_ne)
+    
+    β = if plane_parallel 
+        calculate_plane_parallel_escape_propability(v, z, n)
+    else
+        calculateescapepropabilities(v, z, n)
+    end
+    n_e = if simple_ne
+        n_H - n_1
+    else
+        n_H - sum(n)
+    end
+    M, R = menzelmatrix(β, n_e, T_l, T_s, W)
+    b = [n[i]/lteni(i, n_e, T_l) for i = 1:n_levels]
+    σ_1 = (M[1,:] ⋅ b + R[1])
+    return σ_1 * h^3/(2π*mₑ*kB*T_l)^(3/2)*n_e^2*exp(χ1/T_l)
+end
+
+function calc_logarithmic_derivative(n_1, n_H, T_l, W, T_s, z, v; n_levels = 15, ε = 1e-3, max_it = 100, plane_parallel = false, simple_ne = false)
+    σ_1 = calc_first_level_derivative(n_1, n_H, T_l, W, T_s, z, v; n_levels = n_levels, ε = ε, max_it = max_it, 
+                                                                   plane_parallel = plane_parallel, simple_ne = simple_ne)
+    df_ds = σ_1/n_H/v
+    f = n_1/n_H
+    l_f = log(f/(1-f))
+    return 1/f*1/(1-f)*df_ds
+end
